@@ -27,9 +27,12 @@ header {
     padding: 1rem 0;
 }
 
-header h1 {
-    font-size: 1.5rem;
-    color: #16213e;
+.brand-logo {
+    height: 48px;
+    width: auto;
+    display: block;
+    margin: 0 auto 0.25rem;
+    object-fit: contain;
 }
 
 .subtitle {
