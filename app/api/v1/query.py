@@ -32,6 +32,7 @@ async def execute_query(
             page=request.page,
             page_size=request.page_size,
             include_commentary=request.include_commentary,
+            session_id=request.session_id,
         )
     except SQLValidationError as e:
         raise HTTPException(status_code=400, detail={

@@ -41,6 +41,25 @@ header {
     margin-top: 0.25rem;
 }
 
+.new-chat-btn {
+    display: inline-block;
+    margin-top: 0.6rem;
+    padding: 0.35rem 0.9rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #4361ee;
+    background: transparent;
+    border: 1.5px solid #4361ee;
+    border-radius: 20px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+
+.new-chat-btn:hover {
+    background: #4361ee;
+    color: #fff;
+}
+
 .chat-area {
     flex: 1;
     overflow-y: auto;

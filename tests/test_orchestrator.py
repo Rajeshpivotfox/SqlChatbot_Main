@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 from app.services.orchestrator import QueryOrchestrator
 from app.services.query_executor import QueryResult
 from app.services.cache_service import CacheService
+from app.services.conversation_memory import ConversationMemory
 from app.services.sql_validator import SQLValidator
 from app.services.result_formatter import ResultFormatter
 from app.exceptions import SQLValidationError
@@ -41,6 +42,7 @@ def mock_orchestrator():
         formatter=formatter,
         commentary_gen=commentary_gen,
         cache=cache,
+        memory=ConversationMemory(),
     )
 
 
@@ -89,6 +91,7 @@ async def test_pipeline_rejects_bad_sql():
         formatter=ResultFormatter(),
         commentary_gen=AsyncMock(),
         cache=CacheService(),
+        memory=ConversationMemory(),
     )
 
     with pytest.raises(SQLValidationError):

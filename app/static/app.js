@@ -2,8 +2,32 @@ const chatArea = document.getElementById('chat');
 const form = document.getElementById('query-form');
 const input = document.getElementById('question-input');
 const submitBtn = document.getElementById('submit-btn');
+const newChatBtn = document.getElementById('new-chat-btn');
 
 const API_URL = '/api/v1';
+
+// ── Session management ────────────────────────────────────────────────────────
+function generateSessionId() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+        const r = Math.random() * 16 | 0;
+        return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+    });
+}
+
+let sessionId = generateSessionId();
+
+newChatBtn.addEventListener('click', () => {
+    sessionId = generateSessionId();
+    chatArea.innerHTML = `
+        <div class="message bot">
+            <div class="message-content">
+                New conversation started. Hello! I can help you query your database using natural language.
+                Try asking something like <em>"How many transactions are in the database?"</em>
+            </div>
+        </div>`;
+    input.focus();
+});
+// ─────────────────────────────────────────────────────────────────────────────
 
 form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -20,7 +44,7 @@ form.addEventListener('submit', async (e) => {
         const response = await fetch(`${API_URL}/query`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ question, page: 1, page_size: 100, include_commentary: true }),
+            body: JSON.stringify({ question, page: 1, page_size: 100, include_commentary: true, session_id: sessionId }),
         });
 
         loadingEl.remove();
@@ -181,7 +205,7 @@ async function loadPage(question, page, pageSize) {
         const response = await fetch(`${API_URL}/query`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ question, page, page_size: pageSize, include_commentary: false }),
+            body: JSON.stringify({ question, page, page_size: pageSize, include_commentary: false, session_id: sessionId }),
         });
         loadingEl.remove();
 

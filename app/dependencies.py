@@ -8,6 +8,7 @@ from app.services.query_executor import QueryExecutor
 from app.services.result_formatter import ResultFormatter
 from app.services.commentary import CommentaryGenerator
 from app.services.cache_service import CacheService
+from app.services.conversation_memory import ConversationMemory
 from app.services.orchestrator import QueryOrchestrator
 
 # Module-level singletons (initialized in lifespan)
@@ -47,6 +48,7 @@ async def init_services(settings: Settings) -> None:
     formatter = ResultFormatter()
     commentary_gen = CommentaryGenerator(_claude_client, formatter)
     cache = CacheService(ttl_seconds=settings.cache_ttl_seconds)
+    memory = ConversationMemory()
 
     _orchestrator = QueryOrchestrator(
         nl_engine=nl_engine,
@@ -55,6 +57,7 @@ async def init_services(settings: Settings) -> None:
         formatter=formatter,
         commentary_gen=commentary_gen,
         cache=cache,
+        memory=memory,
     )
 
     # Warm the schema cache

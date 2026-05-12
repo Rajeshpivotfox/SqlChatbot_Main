@@ -7,6 +7,7 @@ from app.services.query_executor import QueryExecutor, QueryResult
 from app.services.result_formatter import ResultFormatter
 from app.services.commentary import CommentaryGenerator
 from app.services.cache_service import CacheService
+from app.services.conversation_memory import ConversationMemory
 from app.models.responses import QueryResponse, ColumnInfo
 from app.exceptions import OutOfScopeError
 
@@ -40,6 +41,7 @@ class QueryOrchestrator:
         formatter: ResultFormatter,
         commentary_gen: CommentaryGenerator,
         cache: CacheService,
+        memory: ConversationMemory,
     ):
         self._nl_engine = nl_engine
         self._validator = validator
@@ -47,6 +49,7 @@ class QueryOrchestrator:
         self._formatter = formatter
         self._commentary = commentary_gen
         self._cache = cache
+        self._memory = memory
 
     async def process_question(
         self,
@@ -54,6 +57,7 @@ class QueryOrchestrator:
         page: int = 1,
         page_size: int = 100,
         include_commentary: bool = True,
+        session_id: str | None = None,
     ) -> QueryResponse:
         """Full pipeline: question -> SQL -> validate -> execute -> format -> comment."""
         query_id = str(uuid.uuid4())
@@ -76,8 +80,9 @@ class QueryOrchestrator:
 
         # ── Step 2: NL → SQL (Claude API) ────────────────────────────────────
         t = time.perf_counter()
+        history = self._memory.get_history(session_id) if session_id else []
         try:
-            sql = await self._nl_engine.generate_sql(question)
+            sql = await self._nl_engine.generate_sql(question, history=history)
         except OutOfScopeError as e:
             timing["nl_to_sql_ms"] = _ms(t)
             timing["total_ms"] = _ms(pipeline_start)
@@ -161,4 +166,14 @@ class QueryOrchestrator:
 
         # ── Step 8: Cache ─────────────────────────────────────────────────────
         self._cache.set(cache_key, response)
+
+        # ── Step 9: Store turn in conversation memory ─────────────────────────
+        if session_id and page == 1:
+            self._memory.add_turn(
+                session_id=session_id,
+                question=question,
+                sql=validated_sql,
+                row_count=formatted["total_rows"],
+            )
+
         return response

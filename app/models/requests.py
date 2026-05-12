@@ -7,6 +7,8 @@ class QueryRequest(BaseModel):
     page: int = Field(default=1, ge=1)
     page_size: int = Field(default=100, ge=1, le=5000)
     include_commentary: bool = Field(default=True)
+    session_id: str | None = Field(default=None,
+                                   description="Client session ID for conversation memory")
 
     @field_validator("question")
     @classmethod

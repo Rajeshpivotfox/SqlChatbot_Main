@@ -22,7 +22,7 @@ DATABASE SCHEMA:
 
 FEW-SHOT EXAMPLES:
 {examples}
-"""
+{history}"""
 
 FEW_SHOT_EXAMPLES_TEMPLATE = """Question: {question}
 SQL: {sql}
