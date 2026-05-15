@@ -44,6 +44,30 @@ DEFAULT_FEW_SHOT = [
                 "FROM [dbo].[tblExchangeRates] "
                 "ORDER BY Period, Description")
     },
+    {
+        "question": "What is the total liability?",
+        "sql": ("SELECT SUM(t.Value) AS total_liability "
+                "FROM [dbo].[tblTransactionalData] t "
+                "JOIN [dbo].[tblChartOfAccounts] c ON t.AccountID = c.AccountID "
+                "WHERE c.Tag LIKE '%, Liability'")
+    },
+    {
+        "question": "What is the total revenue?",
+        "sql": ("SELECT SUM(t.Value) AS total_revenue "
+                "FROM [dbo].[tblTransactionalData] t "
+                "JOIN [dbo].[tblChartOfAccounts] c ON t.AccountID = c.AccountID "
+                "WHERE c.Tag LIKE '%, Revenue'")
+    },
+    {
+        "question": "Show total value by account category",
+        "sql": ("SELECT c.Tag AS account_tag, "
+                "RIGHT(c.Tag, CHARINDEX(',', REVERSE(c.Tag)) - 2) AS category, "
+                "SUM(t.Value) AS total_value "
+                "FROM [dbo].[tblTransactionalData] t "
+                "JOIN [dbo].[tblChartOfAccounts] c ON t.AccountID = c.AccountID "
+                "GROUP BY c.Tag "
+                "ORDER BY total_value DESC")
+    },
 ]
 
 
