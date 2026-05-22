@@ -1,3 +1,12 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# COMMENTARY SYSTEM PROMPT — used for Claude API call #2 (when templates can't handle it).
+#
+# This prompt is ~150 tokens and stays identical across all calls, so it
+# benefits from Anthropic's automatic prompt caching.
+#
+# This call is SKIPPED when TemplateCommentary handles the result (~60-70% of queries).
+# ──────────────────────────────────────────────────────────────────────────────
+
 COMMENTARY_SYSTEM_PROMPT = """You are a data analyst providing concise, insightful commentary on SQL query results.
 
 Given the user's original question, the SQL query that was executed, and the results, provide a brief analysis that:

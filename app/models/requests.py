@@ -1,3 +1,13 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# REQUEST MODELS — Pydantic validation for incoming API requests.
+#
+# TOKEN EFFICIENCY KNOBS FOR CALLERS:
+#   include_commentary=false → skips Claude API call #2 (saves ~500-1000 tokens)
+#     Use this when paginating (page > 1) or when the frontend doesn't need insight.
+#   session_id=null → skips conversation history in the NL→SQL prompt
+#     Use this for one-off questions that don't need follow-up context.
+# ──────────────────────────────────────────────────────────────────────────────
+
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -6,7 +16,9 @@ class QueryRequest(BaseModel):
                           description="Natural language question about the data")
     page: int = Field(default=1, ge=1)
     page_size: int = Field(default=100, ge=1, le=5000)
+    # Set to false to skip Claude API call #2 (commentary generation)
     include_commentary: bool = Field(default=True)
+    # Client-generated UUID for conversation memory; null = no follow-up support
     session_id: str | None = Field(default=None,
                                    description="Client session ID for conversation memory")
 

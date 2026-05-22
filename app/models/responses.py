@@ -1,13 +1,28 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# RESPONSE MODELS — shared Pydantic models for API responses and internal use.
+#
+# QueryResponse: returned to the frontend on every /query call.
+#   - timing_breakdown shows per-step durations (useful for identifying
+#     whether the bottleneck is Claude API, DB, or formatting)
+#   - out_of_scope=true means the question wasn't about the database
+#
+# TableMetadata / ColumnMetadata: used internally by SchemaService and also
+#   exposed via the /schema endpoint. These represent the DB schema that
+#   gets embedded into the NL→SQL prompt.
+# ──────────────────────────────────────────────────────────────────────────────
+
 from pydantic import BaseModel, Field
 from datetime import datetime
 
 
 class ColumnInfo(BaseModel):
+    """Column metadata in query results (name + Python type name)."""
     name: str
     type: str
 
 
 class QueryResponse(BaseModel):
+    """Full pipeline response: SQL + data rows + optional commentary + timing."""
     query_id: str
     question: str
     generated_sql: str
@@ -34,6 +49,7 @@ class ErrorResponse(BaseModel):
 
 
 class TableMetadata(BaseModel):
+    """One table's metadata from SQL Server sys.* views."""
     schema_name: str
     table_name: str
     columns: list["ColumnMetadata"]
@@ -42,6 +58,7 @@ class TableMetadata(BaseModel):
 
 
 class ColumnMetadata(BaseModel):
+    """One column's metadata. FK ref format: schema.table.column."""
     name: str
     data_type: str
     is_nullable: bool
@@ -51,5 +68,6 @@ class ColumnMetadata(BaseModel):
 
 
 class SchemaResponse(BaseModel):
+    """Response for the /schema endpoint."""
     tables: list[TableMetadata]
     last_refreshed: datetime

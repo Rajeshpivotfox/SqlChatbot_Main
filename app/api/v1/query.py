@@ -1,3 +1,22 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# QUERY ENDPOINT — the single API route that handles all user questions.
+#
+# POST /api/v1/query
+#   Body: { question, page?, page_size?, include_commentary?, session_id? }
+#   Returns: QueryResponse (SQL + data + commentary + timing)
+#
+# The endpoint delegates everything to QueryOrchestrator.process_question()
+# and maps domain exceptions to HTTP status codes:
+#   SQLValidationError  → 400 (Claude generated unsafe SQL)
+#   TableNotFoundError  → 422 (Claude referenced a non-existent table)
+#   QueryTimeoutError   → 408 (DB query exceeded timeout)
+#   QueryExecutionError → 500 (DB error)
+#   Unhandled           → 500 (catch-all)
+#
+# TOKEN NOTE: the frontend can set include_commentary=false to skip Claude API
+# call #2 entirely (e.g., when paginating to page 2+ of the same query).
+# ──────────────────────────────────────────────────────────────────────────────
+
 from fastapi import APIRouter, Depends, HTTPException
 from app.models.requests import QueryRequest
 from app.models.responses import QueryResponse, ErrorResponse

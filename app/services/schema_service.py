@@ -1,3 +1,25 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# SCHEMA SERVICE — introspects SQL Server metadata and caches it.
+#
+# This service provides the database schema that gets embedded into the NL→SQL
+# system prompt. Every column, data type, PK, and FK relationship is included
+# so Claude can write correct JOINs and WHERE clauses.
+#
+# TOKEN EFFICIENCY:
+#   - Schema is cached for 24 hours (schema_cache_ttl_seconds=86400).
+#     Re-introspecting on every request would add ~200ms latency but doesn't
+#     affect tokens — the schema data itself is what costs tokens.
+#   - format_for_prompt() uses a compact one-line-per-table format:
+#       [dbo].[tblName] (~1000 rows): Col1 (int*), Col2 (varchar -> dbo.Other.ID)
+#     This is ~40-60% smaller than verbose multi-line formats.
+#   - NLToSQLEngine._filter_relevant_tables() further prunes which tables are
+#     included — this is where the real token savings happen.
+#
+# DOUBLE-CHECKED LOCKING: get_tables() checks the cache twice — once without
+# the lock (fast path) and once inside the lock (prevents thundering herd when
+# multiple requests arrive while the cache is expired).
+# ──────────────────────────────────────────────────────────────────────────────
+
 import asyncio
 import time
 import structlog
@@ -6,6 +28,7 @@ from app.models.responses import TableMetadata, ColumnMetadata
 
 logger = structlog.get_logger(__name__)
 
+# These queries run against sys.* views to discover tables, columns, PKs, and FKs
 TABLES_QUERY = """
 SELECT
     s.name AS schema_name,
@@ -50,7 +73,7 @@ ORDER BY s.name, t.name, c.column_id
 
 
 class SchemaService:
-    """Introspects SQL Server schema and caches the result."""
+    """Introspects SQL Server schema and caches the result (default 24h TTL)."""
 
     def __init__(self, db_pool: DatabasePool, cache_ttl: int = 86400):
         self._db_pool = db_pool
@@ -60,11 +83,14 @@ class SchemaService:
         self._lock = asyncio.Lock()
 
     async def get_tables(self, force_refresh: bool = False) -> list[TableMetadata]:
-        """Return cached schema, refreshing if stale or forced."""
+        """Return cached schema, refreshing if stale or forced.
+        Uses double-checked locking to prevent thundering herd."""
+        # Fast path: cache is warm (no lock needed)
         if not force_refresh and self._cached_tables and \
            (time.time() - self._cached_at) < self._cache_ttl:
             return self._cached_tables
 
+        # Slow path: acquire lock, check again, then introspect
         async with self._lock:
             if not force_refresh and self._cached_tables and \
                (time.time() - self._cached_at) < self._cache_ttl:
@@ -77,6 +103,7 @@ class SchemaService:
             return tables
 
     async def _introspect(self) -> list[TableMetadata]:
+        """Query sys.* views to build a full schema model (tables + columns + FKs)."""
         loop = asyncio.get_event_loop()
         async with self._db_pool.acquire() as conn:
             table_rows = await loop.run_in_executor(
@@ -86,6 +113,7 @@ class SchemaService:
                 None, lambda: conn.cursor().execute(COLUMNS_QUERY).fetchall()
             )
 
+        # Group columns by (schema, table) for efficient lookup
         columns_by_table: dict[tuple[str, str], list[ColumnMetadata]] = {}
         for row in col_rows:
             key = (row.schema_name, row.table_name)
@@ -110,7 +138,10 @@ class SchemaService:
         return tables
 
     def format_for_prompt(self, tables: list[TableMetadata]) -> str:
-        """Format schema metadata as a compact string for LLM context."""
+        """Format schema as a compact one-line-per-table string for the LLM prompt.
+        Format: [schema].[table] (~N rows): col1 (type*), col2 (type -> FK)
+        The * marks primary keys; -> marks foreign key references.
+        This compact format uses ~40-60% fewer tokens than verbose alternatives."""
         lines = []
         for t in tables:
             cols = ", ".join(

@@ -1,3 +1,13 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# RATE LIMITER — sliding window per client IP, applied to API routes only.
+#
+# Protects both the database AND the Claude API budget:
+#   - Each Claude API call costs tokens ($$). Rate limiting prevents a single
+#     client from exhausting the Anthropic API credit balance.
+#   - Default: 30 requests/minute per IP. Configurable via RATE_LIMIT_REQUESTS_PER_MINUTE.
+#   - Skips: /api/v1/health (monitoring) and non-API routes (static files).
+# ──────────────────────────────────────────────────────────────────────────────
+
 import time
 from collections import defaultdict
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -9,7 +19,7 @@ logger = structlog.get_logger(__name__)
 
 
 class RateLimiterMiddleware(BaseHTTPMiddleware):
-    """Simple token-bucket rate limiter per client IP."""
+    """Sliding-window rate limiter per client IP. Protects Claude API budget."""
 
     def __init__(self, app, max_requests: int = 30, window_seconds: int = 60):
         super().__init__(app)
@@ -18,6 +28,7 @@ class RateLimiterMiddleware(BaseHTTPMiddleware):
         self._buckets: dict[str, list[float]] = defaultdict(list)
 
     async def dispatch(self, request: Request, call_next):
+        # Skip rate limiting for health checks and static file serving
         if request.url.path.startswith("/api/v1/health") or \
            not request.url.path.startswith("/api"):
             return await call_next(request)
@@ -25,6 +36,7 @@ class RateLimiterMiddleware(BaseHTTPMiddleware):
         client_ip = request.client.host if request.client else "unknown"
         now = time.time()
 
+        # Prune timestamps outside the sliding window
         self._buckets[client_ip] = [
             t for t in self._buckets[client_ip]
             if now - t < self._window

@@ -1,3 +1,21 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# NL→SQL SYSTEM PROMPT — this is the largest token consumer per request.
+#
+# Placeholders filled at runtime by NLToSQLEngine.generate_sql():
+#   {schema}   — filtered DB schema (only relevant tables, ~100-400 tokens)
+#   {examples} — selected few-shot examples (only relevant ones, ~200-600 tokens)
+#   {history}  — conversation history (0-6 turns, ~0-400 tokens)
+#
+# The static rules portion (~400 tokens) stays identical across calls, which
+# enables Anthropic's automatic prompt caching (5-min TTL, 90% discount).
+#
+# EDITING TIPS:
+#   - Keep the static portion (rules, scope check) STABLE — changes invalidate
+#     the prompt cache and increase costs for the next 5 minutes.
+#   - Add new few-shot examples to DEFAULT_FEW_SHOT in nl_to_sql.py, not here.
+#   - Add new rules at the end of the RULES section to minimize cache churn.
+# ──────────────────────────────────────────────────────────────────────────────
+
 NL_TO_SQL_SYSTEM_PROMPT = """You are a SQL Server query generator. Your job is to convert natural language questions into valid T-SQL SELECT queries.
 
 SCOPE CHECK (apply this FIRST before anything else):

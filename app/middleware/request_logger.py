@@ -1,3 +1,11 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# REQUEST LOGGER — structured log for every HTTP request.
+#
+# Logs: method, path, status, duration_ms, client IP.
+# Combined with the orchestrator's timing_breakdown, this gives full
+# observability into where time is spent (network vs API vs DB).
+# ──────────────────────────────────────────────────────────────────────────────
+
 import time
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -7,6 +15,8 @@ logger = structlog.get_logger(__name__)
 
 
 class RequestLoggerMiddleware(BaseHTTPMiddleware):
+    """Logs every HTTP request with method, path, status, and duration."""
+
     async def dispatch(self, request: Request, call_next):
         start = time.perf_counter()
         response = await call_next(request)

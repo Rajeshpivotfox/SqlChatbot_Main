@@ -1,3 +1,22 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# TEMPLATE COMMENTARY — deterministic insights that cost 0 tokens.
+#
+# This module handles ~60-70% of queries without any Claude API call by
+# pattern-matching the result shape:
+#   1. Single value (COUNT/SUM/KPI)  → "Total Transactions: 12,345"
+#   2. Single row, multiple columns  → "Revenue: 1.2M  |  Count: 45K"
+#   3. GROUP BY aggregate            → "10 groups. Combined Value: 34.87B"
+#   4. TOP N listing                 → "Top 5 by Value: Entity1 (1.2M), ..."
+#   5. Generic multi-row             → "1,234 records returned."
+#
+# Returns None when the shape is too complex → CommentaryGenerator falls back
+# to Claude API call #2. Adding more templates here directly reduces API costs.
+#
+# TO ADD A NEW TEMPLATE: add a new elif block in generate() that checks the
+# result shape (n_rows, n_cols, SQL keywords) and returns a formatted string.
+# Return None to fall through to the next template or ultimately to the LLM.
+# ──────────────────────────────────────────────────────────────────────────────
+
 import re
 from decimal import Decimal
 from app.services.query_executor import QueryResult

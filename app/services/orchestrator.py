@@ -1,3 +1,22 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# QUERY ORCHESTRATOR — the central pipeline that wires everything together.
+#
+# Pipeline steps (in order):
+#   1. Cache check       — if hit, skip ALL remaining steps (0 API calls, 0 DB calls)
+#   2. NL → SQL          — Claude API call #1 (most expensive step, ~500-2000 input tokens)
+#   3. SQL validation     — regex-only, no API call, blocks writes/injection
+#   4. Query execution    — runs validated SELECT against SQL Server
+#   5. Result formatting  — converts pyodbc rows to JSON-serializable dicts
+#   6. Commentary         — TemplateCommentary (0 tokens) or Claude API call #2
+#   7. Cache store        — saves response for future identical questions
+#   8. Memory store       — appends turn to conversation history (for follow-ups)
+#
+# TOKEN COST PER QUESTION:
+#   Cache hit:    0 tokens
+#   Simple query: ~1500 input + ~200 output (template commentary, 1 API call)
+#   Complex query: ~2500 input + ~500 output (LLM commentary, 2 API calls)
+# ──────────────────────────────────────────────────────────────────────────────
+
 import uuid
 import time
 import structlog
@@ -31,7 +50,7 @@ def _ms(start: float) -> float:
 
 
 class QueryOrchestrator:
-    """Coordinates the full NL-to-SQL-to-insight pipeline."""
+    """Coordinates the full NL → SQL → execute → insight pipeline."""
 
     def __init__(
         self,
@@ -59,14 +78,17 @@ class QueryOrchestrator:
         include_commentary: bool = True,
         session_id: str | None = None,
     ) -> QueryResponse:
-        """Full pipeline: question -> SQL -> validate -> execute -> format -> comment."""
+        """Full pipeline: question → SQL → validate → execute → format → comment.
+        Each step is timed; the timing_breakdown dict is returned to the client."""
         query_id = str(uuid.uuid4())
         pipeline_start = time.perf_counter()
         timing: dict[str, float] = {}
 
         logger.info("pipeline_started", query_id=query_id, question=question)
 
-        # ── Step 1: Cache check ───────────────────────────────────────────────
+        # ── Step 1: Cache check (0 tokens, 0 DB calls) ───────────────────────
+        # Cache key = SHA-256(question + page + page_size). Identical questions
+        # skip the entire pipeline — this is the #1 token saver for repeat queries.
         t = time.perf_counter()
         cache_key = CacheService.make_key(question, page, page_size)
         cached = self._cache.get(cache_key)
@@ -78,7 +100,9 @@ class QueryOrchestrator:
             cached.timing_breakdown = {"cache_hit_ms": _ms(pipeline_start)}
             return cached
 
-        # ── Step 2: NL → SQL (Claude API) ────────────────────────────────────
+        # ── Step 2: NL → SQL (Claude API call #1 — most expensive) ───────────
+        # Sends: system prompt (schema + rules + examples + history) + question
+        # Returns: raw SQL string or "OUT_OF_SCOPE" for non-DB questions
         t = time.perf_counter()
         history = self._memory.get_history(session_id) if session_id else []
         try:
@@ -88,6 +112,7 @@ class QueryOrchestrator:
             timing["total_ms"] = _ms(pipeline_start)
             logger.info("pipeline_out_of_scope", query_id=query_id,
                         question=question, has_answer=bool(e.answer), **timing)
+            # OUT_OF_SCOPE:<answer> means Claude answered a general knowledge Q
             if e.answer:
                 commentary = (
                     f"{e.answer}\n\n"
@@ -114,24 +139,29 @@ class QueryOrchestrator:
             )
         timing["nl_to_sql_ms"] = _ms(t)
 
-        # ── Step 3: SQL Validation ────────────────────────────────────────────
+        # ── Step 3: SQL Validation (regex-only, 0 tokens) ────────────────────
+        # Blocks non-SELECT statements, SQL injection patterns, oversized queries
         t = time.perf_counter()
         validated_sql = self._validator.validate(sql)
         timing["validation_ms"] = _ms(t)
 
-        # ── Step 4: Query Execution ───────────────────────────────────────────
+        # ── Step 4: Query Execution (DB call, no tokens) ─────────────────────
+        # Runs the validated SQL against SQL Server with pagination + timeout
         t = time.perf_counter()
         result: QueryResult = await self._executor.execute(
             validated_sql, page=page, page_size=page_size
         )
         timing["sql_execution_ms"] = _ms(t)
 
-        # ── Step 5: Result Formatting ─────────────────────────────────────────
+        # ── Step 5: Result Formatting (CPU-only, 0 tokens) ──────────────────
+        # Converts pyodbc rows → JSON-serializable dicts, handles Decimal/datetime
         t = time.perf_counter()
         formatted = self._formatter.format_for_response(result)
         timing["formatting_ms"] = _ms(t)
 
-        # ── Step 6: Commentary (Claude API) ───────────────────────────────────
+        # ── Step 6: Commentary (0 tokens if template handles it, else API call #2)
+        # TemplateCommentary handles ~60-70% of queries (single values, GROUP BY,
+        # TOP N) without any API call. Only complex/unrecognised shapes hit Claude.
         commentary = None
         if include_commentary:
             t = time.perf_counter()
@@ -164,10 +194,12 @@ class QueryOrchestrator:
             timing_breakdown=timing,
         )
 
-        # ── Step 8: Cache ─────────────────────────────────────────────────────
+        # ── Step 8: Cache response (saves tokens on repeat questions) ─────────
         self._cache.set(cache_key, response)
 
-        # ── Step 9: Store turn in conversation memory ─────────────────────────
+        # ── Step 9: Store turn in conversation memory (for follow-ups) ────────
+        # Only store on page 1 — pagination requests for the same question
+        # shouldn't create duplicate history entries
         if session_id and page == 1:
             self._memory.add_turn(
                 session_id=session_id,

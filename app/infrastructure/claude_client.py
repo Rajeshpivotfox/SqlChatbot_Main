@@ -1,3 +1,24 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# CLAUDE API CLIENT — thin async wrapper around the Anthropic SDK.
+#
+# This is the ONLY file that talks to the Anthropic API. Two callers use it:
+#   1. NLToSQLEngine.generate_sql()  — converts question → SQL (temp=0.0)
+#   2. CommentaryGenerator.generate() — summarizes results (temp=0.3)
+#
+# TOKEN EFFICIENCY NOTES:
+#   - Callers should pass explicit max_tokens suited to their output size:
+#       NL→SQL: 512 is plenty (SQL queries are ~100-300 tokens)
+#       Commentary: 1024 (short prose summaries)
+#     The default 4096 wastes the model's attention budget and may produce
+#     verbose output. Lower max_tokens = faster response + lower cost.
+#   - Prompt caching: Anthropic caches identical system prompts for 5 min.
+#     Since our schema rarely changes, back-to-back calls often get cache hits
+#     on the system prompt portion. Keep the system prompt STABLE across calls
+#     (don't embed timestamps or random IDs in it).
+#   - Retry only on transient errors (rate-limit, 500, connection); auth and
+#     bad-request errors fail fast.
+# ──────────────────────────────────────────────────────────────────────────────
+
 import anthropic
 import structlog
 from tenacity import (
@@ -22,7 +43,9 @@ class ClaudeClient:
     async def complete(self, system_prompt: str, user_message: str,
                        max_tokens: int | None = None,
                        temperature: float | None = None) -> str:
-        """Send a message to Claude and return the text response."""
+        """Send a message to Claude and return the text response.
+        Callers should pass max_tokens appropriate to their use case
+        to avoid wasting tokens (512 for SQL, 1024 for commentary)."""
         return await self._complete_with_retry(
             system_prompt=system_prompt,
             user_message=user_message,
