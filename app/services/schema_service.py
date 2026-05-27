@@ -2,22 +2,19 @@
 # SCHEMA SERVICE — introspects SQL Server metadata and caches it.
 #
 # This service provides the database schema that gets embedded into the NL→SQL
-# system prompt. Every column, data type, PK, and FK relationship is included
-# so Claude can write correct JOINs and WHERE clauses.
+# system prompt. Discovers BOTH tables AND views using sys.objects.
+#
+# DATABASE: zdb_employee contains only the [dbo].[transactionaldata] VIEW
+# (no base tables). The old queries used sys.tables which only returns tables,
+# so we now use sys.objects with type IN ('U', 'V') to find both.
 #
 # TOKEN EFFICIENCY:
 #   - Schema is cached for 24 hours (schema_cache_ttl_seconds=86400).
-#     Re-introspecting on every request would add ~200ms latency but doesn't
-#     affect tokens — the schema data itself is what costs tokens.
-#   - format_for_prompt() uses a compact one-line-per-table format:
-#       [dbo].[tblName] (~1000 rows): Col1 (int*), Col2 (varchar -> dbo.Other.ID)
-#     This is ~40-60% smaller than verbose multi-line formats.
-#   - NLToSQLEngine._filter_relevant_tables() further prunes which tables are
-#     included — this is where the real token savings happen.
+#   - format_for_prompt() uses a compact one-line-per-object format.
+#   - With a single view, the entire schema section is ~80 tokens.
 #
 # DOUBLE-CHECKED LOCKING: get_tables() checks the cache twice — once without
-# the lock (fast path) and once inside the lock (prevents thundering herd when
-# multiple requests arrive while the cache is expired).
+# the lock (fast path) and once inside the lock (prevents thundering herd).
 # ──────────────────────────────────────────────────────────────────────────────
 
 import asyncio
@@ -28,23 +25,32 @@ from app.models.responses import TableMetadata, ColumnMetadata
 
 logger = structlog.get_logger(__name__)
 
-# These queries run against sys.* views to discover tables, columns, PKs, and FKs
-TABLES_QUERY = """
+# ── Object discovery query ───────────────────────────────────────────────────
+# Uses sys.objects to find BOTH tables (type='U') AND views (type='V').
+# Row count: tables have partition stats; views use sp_spaceused estimate or NULL.
+# LEFT JOIN on sys.partitions handles views gracefully (they have no partitions).
+OBJECTS_QUERY = """
 SELECT
     s.name AS schema_name,
-    t.name AS table_name,
+    o.name AS table_name,
+    o.type AS object_type,
     p.rows AS row_count
-FROM sys.tables t
-JOIN sys.schemas s ON t.schema_id = s.schema_id
-JOIN sys.partitions p ON t.object_id = p.object_id AND p.index_id IN (0, 1)
-WHERE s.name NOT IN ('sys')
-ORDER BY s.name, t.name
+FROM sys.objects o
+JOIN sys.schemas s ON o.schema_id = s.schema_id
+LEFT JOIN sys.partitions p ON o.object_id = p.object_id AND p.index_id IN (0, 1)
+WHERE o.type IN ('U', 'V')
+  AND s.name NOT IN ('sys')
+ORDER BY s.name, o.name
 """
 
+# ── Column discovery query ───────────────────────────────────────────────────
+# Uses sys.objects instead of sys.tables so it finds columns for VIEWS too.
+# PK and FK detection still works for tables; views will have is_primary_key=0
+# and foreign_key_ref=NULL (views don't have their own constraints).
 COLUMNS_QUERY = """
 SELECT
     s.name AS schema_name,
-    t.name AS table_name,
+    o.name AS table_name,
     c.name AS column_name,
     ty.name AS data_type,
     c.is_nullable,
@@ -57,8 +63,8 @@ SELECT
          ELSE NULL
     END AS foreign_key_ref
 FROM sys.columns c
-JOIN sys.tables t ON c.object_id = t.object_id
-JOIN sys.schemas s ON t.schema_id = s.schema_id
+JOIN sys.objects o ON c.object_id = o.object_id AND o.type IN ('U', 'V')
+JOIN sys.schemas s ON o.schema_id = s.schema_id
 JOIN sys.types ty ON c.user_type_id = ty.user_type_id
 LEFT JOIN (
     sys.index_columns ic
@@ -68,7 +74,7 @@ LEFT JOIN (
 LEFT JOIN sys.foreign_key_columns fkc
     ON c.object_id = fkc.parent_object_id AND c.column_id = fkc.parent_column_id
 WHERE s.name NOT IN ('sys')
-ORDER BY s.name, t.name, c.column_id
+ORDER BY s.name, o.name, c.column_id
 """
 
 
@@ -103,12 +109,14 @@ class SchemaService:
             return tables
 
     async def _introspect(self) -> list[TableMetadata]:
-        """Query sys.* views to build a full schema model (tables + columns + FKs)."""
+        """Query sys.objects to discover tables + views, then get their columns."""
         loop = asyncio.get_event_loop()
         async with self._db_pool.acquire() as conn:
+            # Discover all tables and views
             table_rows = await loop.run_in_executor(
-                None, lambda: conn.cursor().execute(TABLES_QUERY).fetchall()
+                None, lambda: conn.cursor().execute(OBJECTS_QUERY).fetchall()
             )
+            # Get columns for all discovered objects
             col_rows = await loop.run_in_executor(
                 None, lambda: conn.cursor().execute(COLUMNS_QUERY).fetchall()
             )
@@ -126,15 +134,36 @@ class SchemaService:
             )
             columns_by_table.setdefault(key, []).append(col)
 
+        # Build list; for views, row_count from partitions is NULL so we
+        # fetch it with a COUNT(*) query during introspection (runs once per cache TTL)
         tables = []
+        views_needing_count: list[tuple[int, str, str]] = []
         for row in table_rows:
             key = (row.schema_name, row.table_name)
+            idx = len(tables)
             tables.append(TableMetadata(
                 schema_name=row.schema_name,
                 table_name=row.table_name,
                 columns=columns_by_table.get(key, []),
                 row_count=row.row_count,
             ))
+            # Views have NULL row_count from sys.partitions
+            if row.row_count is None and row.object_type.strip() == 'V':
+                views_needing_count.append((idx, row.schema_name, row.table_name))
+
+        # Get actual row counts for views (only runs at startup / cache refresh)
+        if views_needing_count:
+            async with self._db_pool.acquire() as conn:
+                for idx, schema, name in views_needing_count:
+                    try:
+                        count_sql = f"SELECT COUNT(*) FROM [{schema}].[{name}]"
+                        count_row = await loop.run_in_executor(
+                            None, lambda s=count_sql: conn.cursor().execute(s).fetchone()
+                        )
+                        tables[idx].row_count = count_row[0] if count_row else 0
+                    except Exception:
+                        tables[idx].row_count = 0
+
         return tables
 
     def format_for_prompt(self, tables: list[TableMetadata]) -> str:

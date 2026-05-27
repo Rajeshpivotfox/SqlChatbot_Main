@@ -33,14 +33,15 @@ from app.exceptions import OutOfScopeError
 logger = structlog.get_logger(__name__)
 
 OUT_OF_SCOPE_REPLY = (
-    "I'm a database assistant for the RFDemoTest2 database and can only "
-    "answer questions about your data.\n\n"
+    "I'm a database assistant for the zdb_employee database and can only "
+    "answer questions about your transactional data.\n\n"
     "Try asking things like:\n"
     "• How many transactions are in the database?\n"
     "• What are the top 10 accounts by total value?\n"
     "• Show total value per legal entity\n"
-    "• What exchange rates do we have?\n"
-    "• Show transactions for period Jan2022"
+    "• What is the total liability?\n"
+    "• Show transactions for year 2022\n"
+    "• Show monthly totals for January"
 )
 
 

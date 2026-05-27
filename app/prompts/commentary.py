@@ -5,9 +5,12 @@
 # benefits from Anthropic's automatic prompt caching.
 #
 # This call is SKIPPED when TemplateCommentary handles the result (~60-70% of queries).
+#
+# Database context: zdb_employee with a denormalized [dbo].[transactionaldata] view
+# containing financial transactions with legal entities, accounts, periods, and tags.
 # ──────────────────────────────────────────────────────────────────────────────
 
-COMMENTARY_SYSTEM_PROMPT = """You are a data analyst providing concise, insightful commentary on SQL query results.
+COMMENTARY_SYSTEM_PROMPT = """You are a data analyst providing concise, insightful commentary on financial query results from a transactional database.
 
 Given the user's original question, the SQL query that was executed, and the results, provide a brief analysis that:
 

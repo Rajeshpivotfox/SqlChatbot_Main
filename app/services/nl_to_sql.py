@@ -37,79 +37,96 @@ from app.exceptions import OutOfScopeError
 logger = structlog.get_logger(__name__)
 
 # ── Few-shot examples ────────────────────────────────────────────────────────
-# Each example teaches Claude a SQL pattern for this specific database.
-# The "tables" key (added below) lets _select_relevant_examples() pick only
-# examples that reference tables present in the current prompt's schema —
-# sending irrelevant examples wastes ~50-100 tokens each.
+# Each example teaches Claude a SQL pattern for the denormalized view.
+# ALL queries target [dbo].[transactionaldata] — no JOINs needed.
+# The "tables" key lets _select_relevant_examples() pick only examples
+# that reference objects present in the current prompt's schema.
 
 DEFAULT_FEW_SHOT = [
     {
         "question": "How many transactions are in the database?",
         "sql": ("SELECT COUNT(*) AS total_transactions "
-                "FROM [dbo].[tblTransactionalData]"),
-        "tables": {"tbltransactionaldata"},
+                "FROM [dbo].[transactionaldata]"),
+        "tables": {"transactionaldata"},
     },
     {
         "question": "What are the top 10 accounts by total value?",
-        "sql": ("SELECT TOP 10 t.AccountID, c.AccountDescription, "
-                "SUM(t.Value) AS total_value "
-                "FROM [dbo].[tblTransactionalData] t "
-                "JOIN [dbo].[tblChartOfAccounts] c ON t.AccountID = c.AccountID "
-                "GROUP BY t.AccountID, c.AccountDescription "
+        "sql": ("SELECT TOP 10 account_id, account_description, "
+                "SUM(value) AS total_value "
+                "FROM [dbo].[transactionaldata] "
+                "GROUP BY account_id, account_description "
                 "ORDER BY total_value DESC"),
-        "tables": {"tbltransactionaldata", "tblchartofaccounts"},
+        "tables": {"transactionaldata"},
     },
     {
         "question": "Show me all transactions for period Jan2022",
-        "sql": ("SELECT TransactionID, AccountID, LegalEntity, Value, Period "
-                "FROM [dbo].[tblTransactionalData] "
-                "WHERE Period = 'Jan2022' "
-                "ORDER BY Value DESC"),
-        "tables": {"tbltransactionaldata"},
+        "sql": ("SELECT account_id, account_description, legal_entity_name, "
+                "value, period, transaction_type_desc "
+                "FROM [dbo].[transactionaldata] "
+                "WHERE period = 'Jan2022' "
+                "ORDER BY value DESC"),
+        "tables": {"transactionaldata"},
     },
     {
         "question": "What is the total value per legal entity?",
-        "sql": ("SELECT LegalEntity, "
-                "SUM(Value) AS total_value, "
+        "sql": ("SELECT legal_entity_name, "
+                "SUM(value) AS total_value, "
                 "COUNT(*) AS transaction_count "
-                "FROM [dbo].[tblTransactionalData] "
-                "GROUP BY LegalEntity "
+                "FROM [dbo].[transactionaldata] "
+                "GROUP BY legal_entity_name "
                 "ORDER BY total_value DESC"),
-        "tables": {"tbltransactionaldata"},
+        "tables": {"transactionaldata"},
     },
     {
-        "question": "Show me all exchange rates for a specific period",
-        "sql": ("SELECT Description, Category, Period, Rate, Fraction "
-                "FROM [dbo].[tblExchangeRates] "
-                "ORDER BY Period, Description"),
-        "tables": {"tblexchangerates"},
+        "question": "Show me transactions for year 2022",
+        "sql": ("SELECT account_description, legal_entity_name, value, "
+                "period, full_month, year "
+                "FROM [dbo].[transactionaldata] "
+                "WHERE year = '2022' "
+                "ORDER BY period, value DESC"),
+        "tables": {"transactionaldata"},
     },
     {
         "question": "What is the total liability?",
-        "sql": ("SELECT SUM(t.Value) AS total_liability "
-                "FROM [dbo].[tblTransactionalData] t "
-                "JOIN [dbo].[tblChartOfAccounts] c ON t.AccountID = c.AccountID "
-                "WHERE c.Tag LIKE '%, Liability'"),
-        "tables": {"tbltransactionaldata", "tblchartofaccounts"},
+        "sql": ("SELECT SUM(value) AS total_liability "
+                "FROM [dbo].[transactionaldata] "
+                "WHERE tag LIKE '%, Liability'"),
+        "tables": {"transactionaldata"},
     },
     {
         "question": "What is the total revenue?",
-        "sql": ("SELECT SUM(t.Value) AS total_revenue "
-                "FROM [dbo].[tblTransactionalData] t "
-                "JOIN [dbo].[tblChartOfAccounts] c ON t.AccountID = c.AccountID "
-                "WHERE c.Tag LIKE '%, Revenue'"),
-        "tables": {"tbltransactionaldata", "tblchartofaccounts"},
+        "sql": ("SELECT SUM(value) AS total_revenue "
+                "FROM [dbo].[transactionaldata] "
+                "WHERE tag LIKE '%, Revenue'"),
+        "tables": {"transactionaldata"},
     },
     {
         "question": "Show total value by account category",
-        "sql": ("SELECT c.Tag AS account_tag, "
-                "RIGHT(c.Tag, CHARINDEX(',', REVERSE(c.Tag)) - 2) AS category, "
-                "SUM(t.Value) AS total_value "
-                "FROM [dbo].[tblTransactionalData] t "
-                "JOIN [dbo].[tblChartOfAccounts] c ON t.AccountID = c.AccountID "
-                "GROUP BY c.Tag "
+        "sql": ("SELECT tag AS account_tag, "
+                "RIGHT(tag, CHARINDEX(',', REVERSE(tag)) - 2) AS category, "
+                "SUM(value) AS total_value "
+                "FROM [dbo].[transactionaldata] "
+                "GROUP BY tag "
                 "ORDER BY total_value DESC"),
-        "tables": {"tbltransactionaldata", "tblchartofaccounts"},
+        "tables": {"transactionaldata"},
+    },
+    {
+        "question": "Show monthly totals for January",
+        "sql": ("SELECT year, full_month, "
+                "SUM(value) AS total_value, "
+                "COUNT(*) AS transaction_count "
+                "FROM [dbo].[transactionaldata] "
+                "WHERE short_month = 'Jan' "
+                "GROUP BY year, full_month "
+                "ORDER BY year"),
+        "tables": {"transactionaldata"},
+    },
+    {
+        "question": "What data types are there?",
+        "sql": ("SELECT DISTINCT data_type, data_type_desc "
+                "FROM [dbo].[transactionaldata] "
+                "ORDER BY data_type"),
+        "tables": {"transactionaldata"},
     },
 ]
 
