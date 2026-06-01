@@ -90,6 +90,147 @@ def _has_keyword(sql: str, *keywords: str) -> bool:
     return any(re.search(rf'\b{kw}\b', sql, re.IGNORECASE) for kw in keywords)
 
 
+# ── Follow-up question generation ────────────────────────────────────────────
+# These are context-aware suggestions appended to every commentary.
+# They help users explore the data further without needing to think of queries.
+
+# Keywords detected in the question to determine the topic
+_TOPIC_KEYWORDS = {
+    "revenue":   {"category": "Revenue",   "opposites": ["expenses", "liabilities"],
+                  "drilldowns": ["by legal entity", "by account", "by month"]},
+    "expense":   {"category": "Expense",   "opposites": ["revenue", "assets"],
+                  "drilldowns": ["by legal entity", "by account", "by month"]},
+    "liability": {"category": "Liability", "opposites": ["assets", "equity"],
+                  "drilldowns": ["by legal entity", "by account"]},
+    "asset":     {"category": "Asset",     "opposites": ["liabilities", "equity"],
+                  "drilldowns": ["by legal entity", "by account"]},
+    "equity":    {"category": "Equity",    "opposites": ["assets", "liabilities"],
+                  "drilldowns": ["by legal entity", "by account"]},
+}
+
+
+def _suggest_followups(question: str, sql: str, rows: list[dict],
+                       cols: list[dict], result_type: str) -> list[str]:
+    """Generate 2-4 context-aware follow-up question suggestions.
+    result_type: 'single_value', 'single_row', 'comparison', 'top_n', 'generic'"""
+    q_lower = question.lower()
+    suggestions = []
+
+    # ── Detect what the user was asking about ────────────────────────────────
+    # Topic: revenue, expense, liability, asset, equity
+    detected_topic = None
+    for keyword, info in _TOPIC_KEYWORDS.items():
+        if keyword in q_lower:
+            detected_topic = info
+            break
+
+    # Entity: which legal entity was mentioned
+    detected_entity = None
+    for entity_kw in ("demo1", "demo2", "demo3", "demo konzern",
+                      "konsolidierungsmandant", "teilkonzern"):
+        if entity_kw in q_lower:
+            detected_entity = entity_kw.upper()
+            break
+
+    # Time: which year/period was mentioned
+    detected_years = re.findall(r'\b(20\d{2})\b', question)
+    has_year_filter = bool(detected_years)
+
+    # Columns in result: helps suggest drill-downs on available dimensions
+    col_names = {c["name"].lower() for c in cols}
+    has_entity = "legal_entity_name" in col_names or _has_keyword(sql, "legal_entity")
+    has_year = "year" in col_names or _has_keyword(sql, "year")
+    has_month = "full_month" in col_names or "short_month" in col_names
+    has_tag = _has_keyword(sql, "tag")
+
+    # ── Generate suggestions based on result type + context ──────────────────
+
+    if result_type == "single_value":
+        # User got one number — suggest breakdowns and comparisons
+        if not has_entity:
+            suggestions.append("Show this broken down by legal entity")
+        if not has_year and not has_year_filter:
+            suggestions.append("Compare this across all years")
+        elif has_year_filter and len(detected_years) == 1:
+            other_year = "2024" if detected_years[0] != "2024" else "2025"
+            suggestions.append(f"Compare this with {other_year}")
+        if not has_month:
+            suggestions.append("Show this by month")
+        if detected_topic and detected_topic["opposites"]:
+            opposite = detected_topic["opposites"][0]
+            suggestions.append(f"What is the total {opposite}?")
+
+    elif result_type == "single_row":
+        # User got one row with multiple metrics — suggest expanding
+        if not has_entity:
+            suggestions.append("Break this down by legal entity")
+        if not has_year:
+            suggestions.append("Show this for each year")
+        if detected_entity:
+            suggestions.append(f"Which accounts contribute most for {detected_entity}?")
+        if detected_topic and detected_topic["opposites"]:
+            opposite = detected_topic["opposites"][0]
+            suggestions.append(f"What about {opposite} for the same period?")
+
+    elif result_type == "comparison":
+        # User compared groups — suggest drilling into a specific group or changing dimension
+        if rows and len(rows) >= 2:
+            first_label = str(rows[0].get(cols[0]["name"], ""))
+            if first_label:
+                suggestions.append(f"Show the account breakdown for {first_label}")
+        if detected_entity:
+            suggestions.append("Compare this across all legal entities instead")
+        elif not has_entity:
+            suggestions.append("Break this down by legal entity")
+        if has_year and not has_month:
+            suggestions.append("Show this by month instead of year")
+        if detected_topic and detected_topic["opposites"]:
+            opposite = detected_topic["opposites"][0]
+            suggestions.append(f"Compare {opposite} for the same periods")
+        if not has_tag and not detected_topic:
+            suggestions.append("Show this split by account category (asset, liability, revenue, etc.)")
+
+    elif result_type == "top_n":
+        # User asked for top N — suggest seeing more, or changing sort
+        if rows:
+            top_item = str(rows[0].get(cols[0]["name"], ""))
+            if top_item:
+                suggestions.append(f"Show all transactions for {top_item}")
+        suggestions.append("Show the bottom 10 instead")
+        if not has_year and not has_year_filter:
+            suggestions.append("Filter this for a specific year")
+        if detected_entity:
+            suggestions.append(f"Show top accounts for {detected_entity}")
+
+    elif result_type == "generic":
+        # Generic multi-row result — suggest aggregations
+        if not has_entity:
+            suggestions.append("Group this by legal entity")
+        if not has_year:
+            suggestions.append("Group this by year")
+        suggestions.append("What is the total value from these results?")
+
+    # ── Universal suggestions (add if not enough yet) ────────────────────────
+    if len(suggestions) < 2:
+        if not has_entity and "legal entity" not in q_lower:
+            suggestions.append("Show total value per legal entity")
+        if not detected_topic:
+            suggestions.append("What are the total liabilities?")
+
+    # Cap at 4 suggestions
+    return suggestions[:4]
+
+
+def _format_followups(suggestions: list[str]) -> str:
+    """Format follow-up suggestions as a markdown section."""
+    if not suggestions:
+        return ""
+    lines = ["\n**Follow-up questions you can ask:**"]
+    for s in suggestions:
+        lines.append(f"  - {s}")
+    return "\n".join(lines)
+
+
 class TemplateCommentary:
     """Fast deterministic commentary using pattern-matched templates. Returns None
     when the result shape is too complex, letting the caller fall back to LLM."""
@@ -116,11 +257,23 @@ class TemplateCommentary:
             val = rows[0][col]
             if _is_numeric(val):
                 label = col.replace("_", " ").title()
-                return _single_value_explanation(label, float(val))
-            return f"**{col.replace('_', ' ').title()}:** {val}"
+                base = _single_value_explanation(label, float(val))
+            else:
+                base = f"**{col.replace('_', ' ').title()}:** {val}"
+            followups = _suggest_followups(question, sql, rows, cols, "single_value")
+            return base + _format_followups(followups)
 
         # ── Single row, multiple columns (KPI summary row) ────────────────────
         if page_rows == 1 and n_cols <= 8:
+            # Detect if the user asked for a comparison but only got 1 row
+            # (e.g., "compare 2024 and 2025" but only 2025 has data)
+            q_lower = question.lower()
+            is_comparison = any(kw in q_lower for kw in (
+                "compare", "comparison", "vs", "versus", "difference",
+                "between", "against",
+            ))
+            is_group_query = _has_keyword(sql, "GROUP BY")
+
             parts = []
             explanations = []
             for c in cols:
@@ -136,7 +289,22 @@ class TemplateCommentary:
             summary = "  •  ".join(parts)
             if explanations:
                 summary += "\n" + "  |  ".join(explanations)
-            return summary if parts else None
+
+            # If user asked for a comparison but only 1 group was returned,
+            # explain that the other group has no data
+            if is_comparison and is_group_query and parts:
+                summary += (
+                    "\n\n*Note: Only **1 group** was returned. The other period "
+                    "or category you asked about has no matching data in the "
+                    "database. The comparison cannot be made because data exists "
+                    "for only one side. Try checking which periods or entities "
+                    "have data available.*"
+                )
+
+            if parts:
+                followups = _suggest_followups(question, sql, rows, cols, "single_row")
+                return summary + _format_followups(followups)
+            return None
 
         # ── Comparison / GROUP BY aggregate (multi-row with numeric column) ───
         if _has_keyword(sql, "GROUP BY") and numeric_cols and page_rows >= 2:
@@ -256,6 +424,10 @@ class TemplateCommentary:
                         "Consider reviewing the individual account breakdown for details.*"
                     )
 
+                # ── Follow-up suggestions ────────────────────────────────
+                followups = _suggest_followups(question, sql, rows, cols, "comparison")
+                lines.append(_format_followups(followups))
+
                 return "\n".join(lines)
             except (TypeError, ValueError):
                 pass
@@ -293,13 +465,19 @@ class TemplateCommentary:
                         f"**{_fmt_scale(last_val)}** (lowest)."
                     )
 
+                # Follow-up suggestions
+                followups = _suggest_followups(question, sql, rows, cols, "top_n")
+                lines.append(_format_followups(followups))
+
                 return "\n".join(lines)
             except (KeyError, TypeError):
                 pass
 
         # ── Multi-row generic fallback ────────────────────────────────────────
         if n_rows > 0:
-            return f"**{n_rows:,} records** returned across {n_cols} columns."
+            base = f"**{n_rows:,} records** returned across {n_cols} columns."
+            followups = _suggest_followups(question, sql, rows, cols, "generic")
+            return base + _format_followups(followups)
 
         return None
 

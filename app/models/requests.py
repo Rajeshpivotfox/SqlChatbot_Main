@@ -21,6 +21,9 @@ class QueryRequest(BaseModel):
     # Client-generated UUID for conversation memory; null = no follow-up support
     session_id: str | None = Field(default=None,
                                    description="Client session ID for conversation memory")
+    # Optional override for the commentary system prompt; null = use default
+    commentary_prompt: str | None = Field(default=None, max_length=5000,
+                                          description="Custom system prompt for commentary generation")
 
     @field_validator("question")
     @classmethod

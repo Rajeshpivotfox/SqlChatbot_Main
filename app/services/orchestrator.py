@@ -78,6 +78,7 @@ class QueryOrchestrator:
         page_size: int = 100,
         include_commentary: bool = True,
         session_id: str | None = None,
+        commentary_prompt: str | None = None,
     ) -> QueryResponse:
         """Full pipeline: question → SQL → validate → execute → format → comment.
         Each step is timed; the timing_breakdown dict is returned to the client."""
@@ -167,7 +168,8 @@ class QueryOrchestrator:
         if include_commentary:
             t = time.perf_counter()
             commentary = await self._commentary.generate(
-                question, validated_sql, result
+                question, validated_sql, result,
+                system_prompt_override=commentary_prompt,
             )
             timing["commentary_ms"] = _ms(t)
 

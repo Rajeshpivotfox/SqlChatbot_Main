@@ -35,7 +35,8 @@ class CommentaryGenerator:
         self._template = TemplateCommentary()
 
     async def generate(self, question: str, sql: str,
-                       result: QueryResult) -> str:
+                       result: QueryResult,
+                       system_prompt_override: str | None = None) -> str:
         """Generate commentary. Returns template commentary when possible
         (0 tokens), falls back to Claude API only for complex results."""
         if not result.rows:
@@ -43,11 +44,14 @@ class CommentaryGenerator:
                     "no data matching your criteria, or the time range/filters "
                     "may need adjusting.")
 
-        # Fast path: deterministic template (0ms, 0 tokens, no LLM call)
-        template_result = self._template.generate(question, sql, result)
-        if template_result is not None:
-            logger.info("commentary_from_template", length=len(template_result))
-            return template_result
+        # When a custom prompt is provided from the frontend, skip templates
+        # and always use the LLM so the user's formatting/style rules apply.
+        if not system_prompt_override:
+            # Fast path: deterministic template (0ms, 0 tokens, no LLM call)
+            template_result = self._template.generate(question, sql, result)
+            if template_result is not None:
+                logger.info("commentary_from_template", length=len(template_result))
+                return template_result
 
         # Slow path: LLM commentary for complex/unrecognised result shapes
         # max_rows=20 keeps input compact — 20 rows is enough for Claude to
@@ -62,7 +66,7 @@ class CommentaryGenerator:
 
         try:
             commentary = await self._claude.complete(
-                system_prompt=COMMENTARY_SYSTEM_PROMPT,
+                system_prompt=system_prompt_override or COMMENTARY_SYSTEM_PROMPT,
                 user_message=user_message,
                 temperature=0.3,
                 # 512 is enough for 3-5 sentence insights (was 1024)

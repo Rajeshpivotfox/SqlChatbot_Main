@@ -337,6 +337,129 @@ header {
     font-variant-numeric: tabular-nums;
 }
 
+/* ── Header Actions ──────────────────────────────────────────────── */
+.header-actions {
+    display: flex;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-top: 0.6rem;
+}
+
+.header-actions .new-chat-btn {
+    margin-top: 0;
+}
+
+.settings-btn {
+    padding: 0.35rem 0.9rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #666;
+    background: transparent;
+    border: 1.5px solid #ccc;
+    border-radius: 20px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.settings-btn:hover {
+    background: #666;
+    color: #fff;
+    border-color: #666;
+}
+
+/* ── Settings Panel ─────────────────────────────────────────────── */
+.settings-panel {
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 12px;
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+    animation: fadeIn 0.2s ease;
+}
+
+.settings-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+}
+
+.settings-header h3 {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #1a1a2e;
+}
+
+.settings-close-btn {
+    background: none;
+    border: none;
+    font-size: 1.3rem;
+    color: #888;
+    cursor: pointer;
+    padding: 0 0.25rem;
+    line-height: 1;
+}
+
+.settings-close-btn:hover {
+    color: #333;
+}
+
+.prompt-textarea {
+    width: 100%;
+    padding: 0.75rem;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    resize: vertical;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.prompt-textarea:focus {
+    border-color: #4361ee;
+}
+
+.settings-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.reset-prompt-btn {
+    padding: 0.4rem 0.9rem;
+    font-size: 0.8rem;
+    color: #888;
+    background: transparent;
+    border: 1.5px solid #ccc;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+
+.reset-prompt-btn:hover {
+    background: #f0f0f0;
+    color: #555;
+}
+
+.save-prompt-btn {
+    padding: 0.4rem 0.9rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: white;
+    background: #4361ee;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.save-prompt-btn:hover {
+    background: #3451d1;
+}
+
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(8px); }
     to { opacity: 1; transform: translateY(0); }

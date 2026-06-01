@@ -4,15 +4,31 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pivotfox SQL Chatbot</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=2">
 </head>
 <body>
     <div class="container">
         <header>
             <img src="pivotfox-logo.png" alt="Pivotfox Solutions" class="brand-logo">
             <p class="subtitle">Ask questions about your data in plain English</p>
-            <button id="new-chat-btn" class="new-chat-btn" title="Start a new conversation">+ New Chat</button>
+            <div class="header-actions">
+                <button id="new-chat-btn" class="new-chat-btn" title="Start a new conversation">+ New Chat</button>
+                <button id="settings-btn" class="settings-btn" title="Commentary prompt settings">Settings</button>
+            </div>
         </header>
+
+        <div id="settings-panel" style="display:none;">
+            <div class="settings-header">
+                <h3>Commentary System Prompt</h3>
+                <button id="settings-close-btn" class="settings-close-btn">&times;</button>
+            </div>
+            <textarea id="commentary-prompt" class="prompt-textarea" rows="10"
+                placeholder="Enter custom commentary system prompt..."></textarea>
+            <div class="settings-actions">
+                <button id="reset-prompt-btn" class="reset-prompt-btn">Reset to Default</button>
+                <button id="save-prompt-btn" class="save-prompt-btn">Save</button>
+            </div>
+        </div>
 
         <div id="chat" class="chat-area">
             <div class="message bot">
@@ -37,6 +53,6 @@
         </form>
     </div>
 
-    <script src="app.js"></script>
+    <script src="app.js?v=2"></script>
 </body>
 </html>
