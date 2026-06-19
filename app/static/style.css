@@ -421,6 +421,30 @@ header {
     border-color: #4361ee;
 }
 
+.prompt-section {
+    margin-bottom: 0.75rem;
+}
+
+.prompt-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #1a1a2e;
+    display: block;
+    margin-bottom: 0.25rem;
+}
+
+.prompt-hint {
+    font-size: 0.75rem;
+    color: #888;
+    margin-bottom: 0.4rem;
+}
+
+.prompt-divider {
+    border: none;
+    border-top: 1px solid #e0e0e0;
+    margin: 0.75rem 0;
+}
+
 .settings-actions {
     display: flex;
     justify-content: flex-end;

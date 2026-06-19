@@ -6,13 +6,15 @@ const newChatBtn = document.getElementById('new-chat-btn');
 const settingsBtn = document.getElementById('settings-btn');
 const settingsPanel = document.getElementById('settings-panel');
 const settingsCloseBtn = document.getElementById('settings-close-btn');
-const promptTextarea = document.getElementById('commentary-prompt');
+const commentaryTextarea = document.getElementById('commentary-prompt');
+const nlToSqlTextarea = document.getElementById('nl-to-sql-prompt');
 const resetPromptBtn = document.getElementById('reset-prompt-btn');
+const resetNlPromptBtn = document.getElementById('reset-nl-prompt-btn');
 const savePromptBtn = document.getElementById('save-prompt-btn');
 
 const API_URL = '/api/v1';
 
-// ── Default commentary prompt ────────────────────────────────────────────────
+// ── Default prompts ──────────────────────────────────────────────────────────
 const DEFAULT_COMMENTARY_PROMPT = `You are a data analyst providing concise, insightful commentary on financial query results from a transactional database.
 
 Given the user's original question, the SQL query that was executed, and the results, provide a brief analysis that:
@@ -30,10 +32,71 @@ RULES:
 - Format numbers with appropriate precision (e.g., $1.2M, not $1,234,567.89).
 - Use bullet points for multiple insights.`;
 
-// ── Commentary prompt settings ───────────────────────────────────────────────
-let customCommentaryPrompt = localStorage.getItem('commentary_prompt') || null;
+const DEFAULT_NL_TO_SQL_PROMPT = `You are a SQL Server query generator. Your job is to convert natural language questions into valid T-SQL SELECT queries.
 
-promptTextarea.value = customCommentaryPrompt || DEFAULT_COMMENTARY_PROMPT;
+SCOPE CHECK (apply this FIRST before anything else):
+If the question is NOT about the data inside this database, respond as follows:
+- If you can answer it as brief general knowledge (math, definitions, geography, simple facts): respond with OUT_OF_SCOPE:<your concise 1-2 sentence answer>
+- For anything else (weather forecasts, news, personal advice, opinions): respond with exactly: OUT_OF_SCOPE
+
+RULES (only if the question IS database-related):
+1. Generate ONLY SELECT statements. Never generate INSERT, UPDATE, DELETE, DROP, ALTER, CREATE, TRUNCATE, EXEC, or any other non-SELECT statement.
+2. Always use fully qualified names: [dbo].[transactionaldata] is the main view.
+3. Use TOP instead of LIMIT (T-SQL syntax).
+4. Use column aliases for clarity.
+5. When the question is ambiguous, prefer the simplest reasonable interpretation.
+6. Do NOT use JOINs — all data is pre-joined in the [dbo].[transactionaldata] view.
+7. For date/period filtering, the view has these columns:
+   - period     — original format e.g. "Jan2022"
+   - full_month — full month name e.g. "January"
+   - short_month — 3-letter abbreviation e.g. "Jan"
+   - year       — 4-digit year e.g. "2022"
+   Use these directly instead of DATEADD/DATEDIFF.
+8. Always include an ORDER BY clause when using TOP or when results have a natural ordering.
+9. Do NOT use semicolons at the end.
+10. Respond with ONLY the SQL query. No explanations, no markdown fencing, no commentary.
+11. CATEGORY/TAG COLUMN (CRITICAL): When a question refers to a category, type, or classification
+    of accounts (e.g. "liabilities", "assets", "revenue", "expenses", "equity"), use the tag column.
+    The tag column stores values like "Loans, Liability", "Interest Income, Revenue",
+    "Fixed Assets - Development Costs, Asset", "Input VAT, Asset".
+    The category is ALWAYS the last word/phrase after the final comma.
+    Therefore ALWAYS filter using: WHERE tag LIKE '%, Liability'  (not = 'Liability')
+    Examples:
+      - liabilities / liability  → WHERE tag LIKE '%, Liability'
+      - assets / asset           → WHERE tag LIKE '%, Asset'
+      - revenue / income         → WHERE tag LIKE '%, Revenue'
+      - expenses / costs         → WHERE tag LIKE '%, Expense'
+      - equity                   → WHERE tag LIKE '%, Equity'
+      - other                    → WHERE tag LIKE '%, Other'
+12. AVAILABLE COLUMNS in [dbo].[transactionaldata]:
+    - legal_entity_id   — numeric entity ID
+    - legal_entity_name — entity name (e.g. "Contoso Ltd")
+    - account_id        — numeric account ID
+    - account_description — account name (e.g. "Interest Income")
+    - value             — transaction monetary amount
+    - period            — e.g. "Jan2022"
+    - data_type         — data type ID
+    - data_type_desc    — data type description
+    - transaction_type  — transaction type ID
+    - transaction_type_desc — transaction type description
+    - full_month        — e.g. "January"
+    - short_month       — e.g. "Jan"
+    - year              — e.g. "2022"
+    - tag               — account classification e.g. "Loans, Liability"
+
+DATABASE SCHEMA:
+{schema}
+
+FEW-SHOT EXAMPLES:
+{examples}
+{history}`;
+
+// ── Prompt settings (load from localStorage) ────────────────────────────────
+let customCommentaryPrompt = localStorage.getItem('commentary_prompt') || null;
+let customNlToSqlPrompt = localStorage.getItem('nl_to_sql_prompt') || null;
+
+commentaryTextarea.value = customCommentaryPrompt || DEFAULT_COMMENTARY_PROMPT;
+nlToSqlTextarea.value = customNlToSqlPrompt || DEFAULT_NL_TO_SQL_PROMPT;
 
 function toggleSettings() {
     settingsPanel.style.display = settingsPanel.style.display === 'none' ? 'block' : 'none';
@@ -46,21 +109,37 @@ settingsCloseBtn.addEventListener('click', () => {
 });
 
 savePromptBtn.addEventListener('click', () => {
-    const val = promptTextarea.value.trim();
-    if (val && val !== DEFAULT_COMMENTARY_PROMPT) {
-        customCommentaryPrompt = val;
-        localStorage.setItem('commentary_prompt', val);
+    const cVal = commentaryTextarea.value.trim();
+    if (cVal && cVal !== DEFAULT_COMMENTARY_PROMPT) {
+        customCommentaryPrompt = cVal;
+        localStorage.setItem('commentary_prompt', cVal);
     } else {
         customCommentaryPrompt = null;
         localStorage.removeItem('commentary_prompt');
     }
+
+    const nVal = nlToSqlTextarea.value.trim();
+    if (nVal && nVal !== DEFAULT_NL_TO_SQL_PROMPT) {
+        customNlToSqlPrompt = nVal;
+        localStorage.setItem('nl_to_sql_prompt', nVal);
+    } else {
+        customNlToSqlPrompt = null;
+        localStorage.removeItem('nl_to_sql_prompt');
+    }
+
     settingsPanel.style.display = 'none';
 });
 
 resetPromptBtn.addEventListener('click', () => {
-    promptTextarea.value = DEFAULT_COMMENTARY_PROMPT;
+    commentaryTextarea.value = DEFAULT_COMMENTARY_PROMPT;
     customCommentaryPrompt = null;
     localStorage.removeItem('commentary_prompt');
+});
+
+resetNlPromptBtn.addEventListener('click', () => {
+    nlToSqlTextarea.value = DEFAULT_NL_TO_SQL_PROMPT;
+    customNlToSqlPrompt = null;
+    localStorage.removeItem('nl_to_sql_prompt');
 });
 
 // ── Session management ────────────────────────────────────────────────────────
@@ -101,7 +180,7 @@ form.addEventListener('submit', async (e) => {
         const response = await fetch(`${API_URL}/query`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ question, page: 1, page_size: 100, include_commentary: true, session_id: sessionId, commentary_prompt: customCommentaryPrompt }),
+            body: JSON.stringify({ question, page: 1, page_size: 100, include_commentary: true, session_id: sessionId, commentary_prompt: customCommentaryPrompt, nl_to_sql_prompt: customNlToSqlPrompt }),
         });
 
         loadingEl.remove();

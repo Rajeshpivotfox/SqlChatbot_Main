@@ -79,6 +79,7 @@ class QueryOrchestrator:
         include_commentary: bool = True,
         session_id: str | None = None,
         commentary_prompt: str | None = None,
+        nl_to_sql_prompt: str | None = None,
     ) -> QueryResponse:
         """Full pipeline: question → SQL → validate → execute → format → comment.
         Each step is timed; the timing_breakdown dict is returned to the client."""
@@ -108,7 +109,10 @@ class QueryOrchestrator:
         t = time.perf_counter()
         history = self._memory.get_history(session_id) if session_id else []
         try:
-            sql = await self._nl_engine.generate_sql(question, history=history)
+            sql = await self._nl_engine.generate_sql(
+                question, history=history,
+                system_prompt_override=nl_to_sql_prompt,
+            )
         except OutOfScopeError as e:
             timing["nl_to_sql_ms"] = _ms(t)
             timing["total_ms"] = _ms(pipeline_start)

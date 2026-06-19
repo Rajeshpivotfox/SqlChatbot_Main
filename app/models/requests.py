@@ -24,6 +24,10 @@ class QueryRequest(BaseModel):
     # Optional override for the commentary system prompt; null = use default
     commentary_prompt: str | None = Field(default=None, max_length=5000,
                                           description="Custom system prompt for commentary generation")
+    # Optional override for the NL-to-SQL system prompt; null = use default
+    # Must contain {schema}, {examples}, {history} placeholders
+    nl_to_sql_prompt: str | None = Field(default=None, max_length=10000,
+                                         description="Custom system prompt for NL-to-SQL generation")
 
     @field_validator("question")
     @classmethod

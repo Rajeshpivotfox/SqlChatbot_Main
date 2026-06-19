@@ -141,7 +141,8 @@ class NLToSQLEngine:
         self._few_shot = few_shot_examples or DEFAULT_FEW_SHOT
 
     async def generate_sql(self, question: str,
-                           history: list[dict] | None = None) -> str:
+                           history: list[dict] | None = None,
+                           system_prompt_override: str | None = None) -> str:
         """Generate a SQL query from a natural language question.
         This is the most token-intensive call — ~1000-2000 input tokens."""
         tables = await self._schema_service.get_tables()
@@ -160,7 +161,8 @@ class NLToSQLEngine:
 
         history_text = self._format_history(history) if history else ""
 
-        system_prompt = NL_TO_SQL_SYSTEM_PROMPT.format(
+        base_prompt = system_prompt_override or NL_TO_SQL_SYSTEM_PROMPT
+        system_prompt = base_prompt.format(
             schema=schema_text,
             examples=examples_text,
             history=history_text,

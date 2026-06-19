@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pivotfox SQL Chatbot</title>
-    <link rel="stylesheet" href="style.css?v=2">
+    <link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
     <div class="container">
@@ -19,14 +19,34 @@
 
         <div id="settings-panel" style="display:none;">
             <div class="settings-header">
-                <h3>Commentary System Prompt</h3>
+                <h3>Prompt Settings</h3>
                 <button id="settings-close-btn" class="settings-close-btn">&times;</button>
             </div>
-            <textarea id="commentary-prompt" class="prompt-textarea" rows="10"
-                placeholder="Enter custom commentary system prompt..."></textarea>
+
+            <div class="prompt-section">
+                <label class="prompt-label">NL-to-SQL Prompt</label>
+                <p class="prompt-hint">Controls how questions are converted to SQL. Must contain {schema}, {examples}, {history} placeholders.</p>
+                <textarea id="nl-to-sql-prompt" class="prompt-textarea" rows="10"
+                    placeholder="Enter custom NL-to-SQL system prompt..."></textarea>
+                <div class="settings-actions">
+                    <button id="reset-nl-prompt-btn" class="reset-prompt-btn">Reset to Default</button>
+                </div>
+            </div>
+
+            <hr class="prompt-divider">
+
+            <div class="prompt-section">
+                <label class="prompt-label">Commentary Prompt</label>
+                <p class="prompt-hint">Controls how query results are interpreted and summarized.</p>
+                <textarea id="commentary-prompt" class="prompt-textarea" rows="10"
+                    placeholder="Enter custom commentary system prompt..."></textarea>
+                <div class="settings-actions">
+                    <button id="reset-prompt-btn" class="reset-prompt-btn">Reset to Default</button>
+                </div>
+            </div>
+
             <div class="settings-actions">
-                <button id="reset-prompt-btn" class="reset-prompt-btn">Reset to Default</button>
-                <button id="save-prompt-btn" class="save-prompt-btn">Save</button>
+                <button id="save-prompt-btn" class="save-prompt-btn">Save All</button>
             </div>
         </div>
 
@@ -53,6 +73,6 @@
         </form>
     </div>
 
-    <script src="app.js?v=2"></script>
+    <script src="app.js?v=3"></script>
 </body>
 </html>

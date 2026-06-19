@@ -53,6 +53,7 @@ async def execute_query(
             include_commentary=request.include_commentary,
             session_id=request.session_id,
             commentary_prompt=request.commentary_prompt,
+            nl_to_sql_prompt=request.nl_to_sql_prompt,
         )
     except SQLValidationError as e:
         raise HTTPException(status_code=400, detail={
